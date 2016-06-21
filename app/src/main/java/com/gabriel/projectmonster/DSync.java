@@ -8,12 +8,21 @@ import android.os.Binder;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+
+import java.io.IOException;
+
 public class DSync extends Service {
+
+    public int cacheTimeoutSeconds = 3600;
 
     public static final String url = "www.luckyprison.com/";
     public static final String store = "store.luckyprison.com";
     public static final String[] pages = {"?page=%p", "forums/", "members/"}; //Simple reference to pages on site
     public static final String[] memberType = {"", "positive_ratings", "points", "staff"};
+
+    public static final String CACHE_FRONT_PAGE_NOID = "front_page_";
 
     // Helpful lcasses
     class DBinder extends Binder { DSync getDataSyncService(){ return DSync.this; } }
@@ -45,7 +54,6 @@ public class DSync extends Service {
     }
     public static boolean isRunning(){ return running; }
 
-    public String loadFrontPage(){
-
-    }
+    //TODO: Not this
+    public String loadFrontPage() throws IOException { return null; }
 }
