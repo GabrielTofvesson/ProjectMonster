@@ -24,16 +24,8 @@ public class DSync extends Service {
 
     public static final String CACHE_FRONT_PAGE_NOID = "front_page_";
 
-    // Helpful lcasses
+    // Helpful classes
     class DBinder extends Binder { DSync getDataSyncService(){ return DSync.this; } }
-    public class BootReceiver extends BroadcastReceiver{
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if(intent.getAction().equalsIgnoreCase(Intent.ACTION_BOOT_COMPLETED) || intent.getAction().equalsIgnoreCase(Intent.ACTION_PACKAGE_REPLACED)
-                    || intent.getAction().equalsIgnoreCase(Intent.ACTION_PACKAGE_ADDED))
-                context.startService(new Intent(context, DSync.class));
-        }
-    }
 
     private static boolean running = false;
     DBinder d = new DBinder();

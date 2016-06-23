@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.gabriel.projectmonster">
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
         android:allowBackup="true"
@@ -12,7 +13,7 @@
         android:theme="@style/AppTheme">
 
         <receiver
-            android:name="com.gabriel.projectmonster.DSync$BootReceiver"
+            android:name="com.gabriel.projectmonster.BootReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>
