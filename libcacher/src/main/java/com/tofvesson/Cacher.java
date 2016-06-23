@@ -5,15 +5,12 @@ import com.sun.istack.internal.Nullable;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,13 +18,15 @@ import java.util.Map;
 @SuppressWarnings("ALL")
 public class Cacher implements Closeable{
 
-    private class CacheDataHolder{ int unixTimeCached = 0; String data = ""; public CacheDataHolder(String s, int i){ unixTimeCached=i; data=s; } }
+    public class CacheDataHolder{ public int unixTimeCached = 0; public String data = ""; public CacheDataHolder(String s, int i){ unixTimeCached=i; data=s; } }
 
-    private PrintStream cache;
-    private BufferedReader cacheIn;
-    private FileReader cacheFileReader;
-    private File cacheFile;
-    private Map<String, CacheDataHolder> cachedValues = new HashMap<>();
+    boolean verbose;
+    Thread purger;
+    PrintStream cache;
+    BufferedReader cacheIn;
+    FileReader cacheFileReader;
+    File cacheFile;
+    Map<String, CacheDataHolder> cachedValues = new HashMap<>();
 
     public Cacher(File file, String s) throws FileNotFoundException, UnsupportedEncodingException {
         if(!(cacheFile = file).isFile()) try { file.createNewFile(); } catch (IOException e) { e.printStackTrace(); }
@@ -102,6 +101,8 @@ public class Cacher implements Closeable{
         return false;
     }
 
+    public boolean containsKey(String k){ return cachedValues.containsKey(k) || cacheContainsKey(k); }
+
     public void store(String k, String v, int cacheTime){
         if(cachedValues.containsKey(k = k.replace("[", "[lb").replace(" ", "[sp"))) cachedValues.replace(k, new CacheDataHolder(v.replace("[", "[lb").replace(" ", "[sp"), cacheTime));
         else cachedValues.put(k, new CacheDataHolder(v.replace("[", "[lb").replace(" ", "[sp"), cacheTime));
@@ -118,13 +119,24 @@ public class Cacher implements Closeable{
         return null;
     }
 
+    public void remove(String k){
+        if(cachedValues.containsKey(k)) cachedValues.remove(k);
+        if(cacheContainsKey(k)){
+            for(String s : loadKeysFromCache())
+                if(!cachedValues.containsKey(k))
+                    cachedValues.put(k, loadFromCache(k));
+            cachedValues.remove(k);
+            try { overwriteCache(); } catch (IOException e) { e.printStackTrace(); }
+        }
+    }
+
     @Nullable
     private CacheDataHolder loadFromCache(String k){
         k = k.replace("[", "[lb").replace(" ", "[sp");
         String s = "";
         try {
             while((s = cacheIn.readLine())!=null) if(s.substring(0, s.indexOf(" ")).equals(k)) //value 123
-                return new CacheDataHolder(s.substring(s.indexOf(" ")+1, s.substring(s.indexOf(" ")+1).indexOf(" ")+s.indexOf(" ")).replace(" ", "[sp").replace("[", "[lb"),
+                return new CacheDataHolder(s.substring(s.indexOf(" ")+1, s.substring(s.indexOf(" ")+1).indexOf(" ")+s.indexOf(" ")).replace("[sp", " ").replace("[lb", "["),
                         Integer.parseInt(s.substring(s.substring(s.indexOf(" ")+1).indexOf(" ")+1+s.indexOf(" "))));
         } catch (IOException e) {
             e.printStackTrace();
@@ -136,15 +148,22 @@ public class Cacher implements Closeable{
         String s = "";
         List<String> keys = new ArrayList<>();
         try { resetReader(); while((s = cacheIn.readLine())!=null) keys.add(s.substring(s.indexOf(" "))); } catch (IOException e) { e.printStackTrace(); }
-
         return keys;
     }
 
-    public void flush() throws IOException {
+    public void flush() {
         List<String> fileKeys = loadKeysFromCache();
         for(String k : fileKeys)
             if(cachedValues.containsKey(k)) cachedValues.replace(k, loadFromCache(k));
             else cachedValues.put(k, loadFromCache(k));
+        try{
+            overwriteCache();
+        }catch(IOException e){
+            e.printStackTrace();
+        }
+    }
+
+    private void overwriteCache() throws IOException {
         cacheFile.delete();
         cacheFile.createNewFile();
         cache = new PrintStream(cacheFile);
@@ -184,16 +203,54 @@ public class Cacher implements Closeable{
         return true;
     }
 
-    private int allOccurrencesOf(String s, String sequence){
+    private int allOccurrencesOf(String s, String regex){
         int i = 0;
         //Assign string to the substring *after* first instance of sequence by incrementing counter, dividing counter variable by itself (i/i = 1)
         //and multiplying by length of sequence to exclude it from new string
-        while(s.indexOf(sequence)!=0) s = s.substring(s.indexOf(sequence)+(((++i)/i)*sequence.length()));
+        while(s.indexOf(regex)!=0) s = s.substring(s.indexOf(regex)+(((++i)/i)*regex.length()));
         return i;
+    }
+
+    public void purge(int timeout) {
+        for (String k : cachedValues.keySet())
+            if (timeout < (System.currentTimeMillis() / 1000) - cachedValues.get(k).unixTimeCached)
+                cachedValues.remove(k);
+        for (String k : loadKeysFromCache())
+            if (timeout < (System.currentTimeMillis() / 1000) - loadFromCache(k).unixTimeCached)
+                remove(k);
+    }
+
+    /**
+     * Starts a thread that will automatically purge old/unusable resources
+     * @param maxTime The maximum time in seconds between the current time and the time when resource was cached before the resource is purged
+     * @param timedelay Time interval between purges (choose a relatively high number to minimize high proceeor loads)
+     * @param verbose Whether or not to output debug to System.out
+     */
+    public void startAutoPurge(final int maxTime, final int timedelay, final boolean verbose){
+        purger = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while(true) {
+                    if (verbose) System.out.println("Purging cache...");
+                    purge(maxTime);
+                    try {
+                        Thread.sleep(timedelay * 1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
+        purger.start();
     }
 
     @Override
     public void close() throws IOException {
+        this.flush();
+        closeNoFlush();
+    }
+
+    public void closeNoFlush() throws IOException {
         cache.close();
         cacheIn.close();
     }
